@@ -173,3 +173,8 @@ cython_debug/
 #other
 playground/
 staticfiles/
+
+# Ignore Django migration files
+**/migrations/
+!*/migrations/__init__.py
+!**/migrations/__init__.py

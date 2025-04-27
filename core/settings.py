@@ -51,8 +51,6 @@ THIRD_APPS = {
     'rest_framework.authtoken',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
-    'drf_spectacular',
-    'drf_spectacular_sidecar',
     'phonenumbers',
     'twilio',
     'corsheaders',
@@ -165,7 +163,6 @@ REST_FRAMEWORK ={
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
     ),
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 SIMPLE_JWT = {
@@ -216,15 +213,6 @@ EMAIL_PORT = 587
 EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-
-SPECTACULAR_SETTINGS = {
-    'TITLE': 'DRF API',
-    'DESCRIPTION': 'An API',
-    'SERVE_INCLUDE_SCHEMA': False,
-    'SWAGGER_UI_DIST': 'SIDECAR',
-    'SWAGGER_UI_FAVICON_HREF': 'SIDECAR',
-    'REDOC_DIST': 'SIDECAR',
-}
 
 CSRF_TRUSTED_ORIGINS = [
     "https://olima.jprq.site",
