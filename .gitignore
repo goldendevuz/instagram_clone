@@ -174,7 +174,6 @@ cython_debug/
 playground/
 staticfiles/
 
-# Ignore Django migration files
-**/migrations/
-!*/migrations/__init__.py
+# Ignore migration files, but not __init__.py
+**/migrations/*
 !**/migrations/__init__.py
