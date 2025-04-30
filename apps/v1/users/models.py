@@ -48,13 +48,14 @@ class User(AbstractUser, BaseModel):
 
     @property
     def full_name(self):
-        return f"{self.first_name} {self.last_name}"
+        return " ".join([self.first_name, self.last_name])
 
-    def create_verify_code(self, verify_type):
+    def create_verify_code(self, verify_type, verify_value=None):
         code = "".join([str(random.randint(0, 10000) % 10) for _ in range(4)])
         UserConfirmation.objects.create(
             user_id=self.id,
             verify_type=verify_type,
+            verify_value=verify_value,
             code=code
         )
         return code
@@ -97,8 +98,8 @@ class User(AbstractUser, BaseModel):
         self.check_pass()
         self.hashing_password()
 
-PHONE_EXPIRE = 2
-EMAIL_EXPIRE = 5
+PHONE_EXPIRE = 5
+EMAIL_EXPIRE = 1
 
 
 class UserConfirmation(BaseModel):
@@ -108,6 +109,7 @@ class UserConfirmation(BaseModel):
     )
     code = models.CharField(max_length=4)
     verify_type = models.CharField(max_length=31, choices=TYPE_CHOICES)
+    verify_value = models.CharField(max_length=31, null=True, blank=True)
     user = models.ForeignKey(User, models.CASCADE, related_name='verify_codes')
     expiration_time = models.DateTimeField(null=True)
     is_confirmed = models.BooleanField(default=False)

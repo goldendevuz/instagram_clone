@@ -29,7 +29,6 @@ def check_email_or_phone(email_or_phone):
     if re.fullmatch(phone_regex, email_or_phone):
         return "phone"
     data = {
-        "success": False,
         "message": "Email yoki telefon raqamingiz notogri"
     }
     raise ValidationError(data)
@@ -44,7 +43,6 @@ def check_user_type(user_input):
         user_input = 'username'
     else:
         data = {
-            "success": False,
             "message": "Email, username yoki telefon raqamingiz noto'g'ri"
         }
         raise ValidationError(data)
@@ -89,15 +87,36 @@ def send_email(email, code):
     )
 
 
+# def send_phone_code(phone, code):
+#     account_sid = config('account_sid')
+#     auth_token = config('auth_token')
+#     client = Client(account_sid, auth_token)
+#     client.messages.create(
+#         body=f"Salom do'stim! Sizning tasdiqlash kodingiz: {code}\n",
+#         from_="+99899325242",
+#         to=f"{phone}"
+#     )
+
+
 def send_phone_code(phone, code):
-    account_sid = config('account_sid')
-    auth_token = config('auth_token')
-    client = Client(account_sid, auth_token)
-    client.messages.create(
-        body=f"Salom do'stim! Sizning tasdiqlash kodingiz: {code}\n",
-        from_="+99899325242",
-        to=f"{phone}"
-    )
+    import requests
+    import json
+
+    url = "http://0.0.0.0:2020/api/sms/"
+
+    payload = json.dumps({
+    "number": phone.replace("+998", ""),
+    "text": f"Salom do'stim! Sizning tasdiqlash kodingiz: {code}\n"
+    })
+    headers = {
+    'Content-Type': 'application/json',
+    'Authorization': f'Basic {config("BASIC_AUTH_TOKEN")}',
+    }
+
+    response = requests.request("POST", url, headers=headers, data=payload)
+
+    return response.json()
+
 
 
 

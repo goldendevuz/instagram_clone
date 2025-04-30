@@ -1,8 +1,10 @@
+from urllib.parse import quote
+from decouple import config
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils.timezone import datetime
-from drf_spectacular.utils import extend_schema, OpenApiParameter
 from icecream import ic
 from rest_framework import permissions, status
+from rest_framework.decorators import permission_classes
 from rest_framework.exceptions import ValidationError, NotFound
 from rest_framework.generics import CreateAPIView, UpdateAPIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -12,93 +14,105 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from apps.v1.shared.utility import send_email, check_email_or_phone
+from apps.v1.shared.custom_responses import success_response
+from apps.v1.shared.utility import send_email, check_email_or_phone, send_phone_code
 from .serializers import SignUpSerializer, ChangeUserInformation, ChangeUserPhotoSerializer, LoginSerializer, \
-    LoginRefreshSerializer, LogoutSerializer, ForgotPasswordSerializer, ResetPasswordSerializer, VerifySerializer
-from .models import User, CODE_VERIFIED, NEW, VIA_EMAIL, VIA_PHONE
+    LoginRefreshSerializer, LogoutSerializer, ForgotPasswordSerializer, ResetPasswordSerializer
+from .models import User, DONE, CODE_VERIFIED, NEW, VIA_EMAIL, VIA_PHONE, UserConfirmation
 
 
 class CreateUserView(CreateAPIView):
     queryset = User.objects.all()
-    permission_classes = (permissions.AllowAny,)
+    permission_classes = (permissions.AllowAny, )
     serializer_class = SignUpSerializer
 
 
 class VerifyAPIView(APIView):
-    permission_classes = (IsAuthenticated,)
-    serializer_class = VerifySerializer
+    permission_classes = (IsAuthenticated, )
 
     def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data)
-        if serializer.is_valid():
-            user = request.user
-            code = serializer.validated_data['code']
-            self.check_verify(user, code)
+        user = self.request.user             # user ->
+        code = self.request.data.get('code') # 4083
+        # if user.auth_status != NEW:
+        #     data = {
+        #         "auth_status": user.auth_status,
+        #         "detail": "Siz allaqachon tasdiqlangan hisobga egasiz"
+        #     }
+        #     raise ValidationError(data)
 
-            return Response({
-                "success": True,
+        self.check_verify(user, code)
+        return Response(
+            data={
                 "auth_status": user.auth_status,
                 "access": user.token()['access'],
                 "refresh": user.token()['refresh_token']
-            })
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+            }
+        )
 
     @staticmethod
-    def check_verify(user, code):  # 12:03 -> 12:05 => expiration_time=12:05   12:04
+    def check_verify(user, code):       # 12:03 -> 12:05 => expiration_time=12:05   12:04
         verifies = user.verify_codes.filter(expiration_time__gte=datetime.now(), code=code, is_confirmed=False)
-        ic(code)
-        ic(verifies)
+        # ic(verifies)
+        # ic(user.__dict__)
+        # ic(code)
+        # ic(UserConfirmation.objects.filter(user_id=user.id, code=code).first().__dict__)
+        usr = UserConfirmation.objects.filter(user_id=user.id, code=code).first()
         if not verifies.exists():
             data = {
-                "message": "Tasdiqlash kodingiz xato yoki eskirgan"
+                "detail": "Tasdiqlash kodingiz xato yoki eskirgan"
             }
             raise ValidationError(data)
         else:
             verifies.update(is_confirmed=True)
         if user.auth_status == NEW:
             user.auth_status = CODE_VERIFIED
+            if usr.verify_type == VIA_PHONE:
+                user.phone_number = usr.verify_value
+            elif usr.verify_type == VIA_EMAIL:
+                user.email = usr.verify_value
             user.save()
         return True
 
 
 class GetNewVerification(APIView):
     permission_classes = [IsAuthenticated, ]
-    serializer_class = VerifySerializer
 
     def get(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data)
-        if serializer.is_valid():
-            user = self.request.user
-            self.check_verification(user)
-            if user.auth_type == VIA_EMAIL:
-                code = user.create_verify_code(VIA_EMAIL)
-                send_email(user.email, code)
-            elif user.auth_type == VIA_PHONE:
-                code = user.create_verify_code(VIA_PHONE)
-                send_email(user.phone_number, code)
-            else:
-                data = {
-                    "message": "Email yoki telefon raqami notogri"
-                }
-                raise ValidationError(data)
+        user = self.request.user
+        # if user.auth_status != NEW:
+        #     data = {
+        #         "success": True,
+        #         "auth_status": user.auth_status,
+        #         "detail": "Siz allaqachon tasdiqlangan hisobga egasiz"
+        #     }
+        #     raise ValidationError(data)
+        # ic(request.user.__dict__)
+        self.check_verification(user)
+        if user.auth_type == VIA_EMAIL:
+            code = user.create_verify_code(VIA_EMAIL)
+            send_email(user.email, code)
+        elif user.auth_type == VIA_PHONE:
+            code = user.create_verify_code(VIA_PHONE)
+            send_phone_code(user.phone_number, code)
+        else:
+            data = {
+                "detail": "Email yoki telefon raqami notogri"
+            }
+            raise ValidationError(data)
 
-            return Response(
-                {
-                    "success": True,
-                    "message": "Tasdiqlash kodingiz qaytadan jo'natildi."
-                }
-            )
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "success": True,
+                "detail": "Tasdiqlash kodingiz qaytadan jo'natildi."
+            }
+        )
 
     @staticmethod
     def check_verification(user):
         verifies = user.verify_codes.filter(expiration_time__gte=datetime.now(), is_confirmed=False)
         if verifies.exists():
             data = {
-                "message": "Kodingiz hali ishlatish uchun yaroqli. Biroz kutib turing"
+                "detail": "Kodingiz hali ishlatish uchun yaroqli. Biroz kutib turing"
             }
             raise ValidationError(data)
 
@@ -106,44 +120,40 @@ class GetNewVerification(APIView):
 class ChangeUserInformationView(UpdateAPIView):
     permission_classes = [IsAuthenticated, ]
     serializer_class = ChangeUserInformation
-    http_method_names = ['patch', 'put']
+    http_method_names = ('patch',)
 
     def get_object(self):
         return self.request.user
 
-    def update(self, request, *args, **kwargs):
-        super(ChangeUserInformationView, self).update(request, *args, **kwargs)
-        data = {
-            'success': True,
-            "message": "User updated successfully",
-            'auth_status': self.request.user.auth_status,
-        }
-        return Response(data, status=200)
-
     def partial_update(self, request, *args, **kwargs):
+        if not request.data:
+            return Response({
+                'success': False,
+                'detail': 'No data provided for update.',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         super(ChangeUserInformationView, self).partial_update(request, *args, **kwargs)
+        
         data = {
             'success': True,
-            "message": "User updated successfully",
+            "detail": "User updated successfully",
             'auth_status': self.request.user.auth_status,
         }
-        return Response(data, status=200)
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class ChangeUserPhotoView(APIView):
-    permission_classes = [IsAuthenticated, ]
+    permission_classes = [IsAuthenticated]
 
     def put(self, request, *args, **kwargs):
         serializer = ChangeUserPhotoSerializer(data=request.data)
         if serializer.is_valid():
             user = request.user
             serializer.update(user, serializer.validated_data)
-            return Response({
-                'message': "Rasm muvaffaqiyatli o'zgartirildi"
-            }, status=200)
-        return Response(
-            serializer.errors, status=400
-        )
+            return success_response("Rasm muvaffaqiyatli o'zgartirildi", status_code=status.HTTP_200_OK)
+        
+        # Let your custom exception handler deal with it
+        raise ValidationError(serializer.errors)
 
 
 class LoginView(TokenObtainPairView):
@@ -167,11 +177,14 @@ class LogOutView(APIView):
             token.blacklist()
             data = {
                 'success': True,
-                'message': "You are loggout out"
+                'detail': "You are loggout out"
             }
             return Response(data, status=205)
         except TokenError:
-            return Response(status=400)
+            data = {
+                "detail": "Token is invalid or expired"
+            }
+            raise ValidationError(data)
 
 
 class ForgotPasswordView(APIView):
@@ -193,18 +206,18 @@ class ForgotPasswordView(APIView):
         return Response(
             {
                 "success": True,
-                'message': "Tasdiqlash kodi muvaffaqiyatli yuborildi",
+                'detail': "Tasdiqlash kodi muvaffaqiyatli yuborildi",
                 "access": user.token()['access'],
                 "refresh": user.token()['refresh_token'],
                 "user_status": user.auth_status,
-            }, status=200
+            }, status=status.HTTP_200_OK
         )
 
 
 class ResetPasswordView(UpdateAPIView):
     serializer_class = ResetPasswordSerializer
     permission_classes = [IsAuthenticated, ]
-    http_method_names = ['patch', 'put']
+    http_method_names = ('patch',)
 
     def get_object(self):
         return self.request.user
@@ -218,7 +231,7 @@ class ResetPasswordView(UpdateAPIView):
         return Response(
             {
                 'success': True,
-                'message': "Parolingiz muvaffaqiyatli o'zgartirildi",
+                'detail': "Parolingiz muvaffaqiyatli o'zgartirildi",
                 'access': user.token()['access'],
                 'refresh': user.token()['refresh_token'],
             }
